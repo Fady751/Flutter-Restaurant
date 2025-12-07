@@ -3,6 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'signup.dart';
+import '../Home.dart';
 
 final String APP_URL = dotenv.env['APP_URL']!;
 final String APIKEY = dotenv.env['APIKEY']!;
@@ -47,6 +48,10 @@ class _LoginPageState extends State<LoginPage> {
       ).showSnackBar(SnackBar(content: Text("$errorMessage")));
       return;
     }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => HomePage()),
+    );
     // print("BODY: ${response.body}");
   }
 
