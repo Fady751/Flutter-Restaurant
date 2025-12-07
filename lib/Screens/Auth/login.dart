@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'signup.dart';
 
 final String APP_URL = dotenv.env['APP_URL']!;
 final String APIKEY = dotenv.env['APIKEY']!;
@@ -34,17 +35,17 @@ class _LoginPageState extends State<LoginPage> {
       final Map<String, dynamic> data = jsonDecode(response.body);
       String errorMessage = data['error']['message'];
 
-      if(errorMessage == "INVALID_LOGIN_CREDENTIALS"){
-        errorMessage = "Invalid email or password. Please try again or sign up.";
-      }
-
-      else if(errorMessage == "EMAIL_NOT_FOUND"){
+      if (errorMessage == "INVALID_LOGIN_CREDENTIALS") {
+        errorMessage =
+            "Invalid email or password. Please try again or sign up.";
+      } else if (errorMessage == "EMAIL_NOT_FOUND") {
         errorMessage = "Email not found. Please check your email or sign up.";
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("$errorMessage")),
-      );      return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("$errorMessage")));
+      return;
     }
     // print("BODY: ${response.body}");
   }
@@ -96,11 +97,14 @@ class _LoginPageState extends State<LoginPage> {
               ),
               child: const Text("Login"),
             ),
-             const SizedBox(height: 40),
+            const SizedBox(height: 40),
             ElevatedButton(
               onPressed: () {
                 print("signup button pressed");
-                // signUp();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SignUp()),
+                );
               },
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
