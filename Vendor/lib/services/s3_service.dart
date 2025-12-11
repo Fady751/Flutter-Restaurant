@@ -10,6 +10,75 @@ class S3Service {
   static String get region => dotenv.env['AWS_REGION'] ?? '';
   static String get bucket => dotenv.env['AWS_S3_BUCKET'] ?? '';
 
+  Future<bool> deleteImage(String fileName) async {
+    if (accessKey.isEmpty || secretKey.isEmpty || region.isEmpty || bucket.isEmpty) {
+      print('AWS credentials are missing for delete');
+      return false;
+    }
+
+    final endpoint = 'https://$bucket.s3.$region.amazonaws.com';
+    final url = Uri.parse('$endpoint/$fileName');
+
+    final DateTime now = DateTime.now().toUtc();
+    final String dateStamp =
+        "${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}";
+    final String amzDate =
+        "${dateStamp}T${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}Z";
+
+    final String method = 'DELETE';
+    final String canonicalUri = '/$fileName';
+    final String canonicalQueryString = '';
+
+    final String canonicalHeaders =
+        'host:$bucket.s3.$region.amazonaws.com\nx-amz-date:$amzDate\nx-amz-content-sha256:UNSIGNED-PAYLOAD\n';
+
+    final String signedHeaders = 'host;x-amz-date;x-amz-content-sha256';
+    final String payloadHash = 'UNSIGNED-PAYLOAD';
+
+    final String canonicalRequest =
+        '$method\n$canonicalUri\n$canonicalQueryString\n$canonicalHeaders\n$signedHeaders\n$payloadHash';
+
+    final String algorithm = 'AWS4-HMAC-SHA256';
+    final String credentialScope = '$dateStamp/$region/s3/aws4_request';
+    final String stringToSign =
+        '$algorithm\n$amzDate\n$credentialScope\n${sha256.convert(utf8.encode(canonicalRequest))}';
+
+    final List<int> kDate =
+        Hmac(sha256, utf8.encode("AWS4$secretKey")).convert(utf8.encode(dateStamp)).bytes;
+    final List<int> kRegion = Hmac(sha256, kDate).convert(utf8.encode(region)).bytes;
+    final List<int> kService = Hmac(sha256, kRegion).convert(utf8.encode("s3")).bytes;
+    final List<int> kSigning =
+        Hmac(sha256, kService).convert(utf8.encode("aws4_request")).bytes;
+
+    final String signature =
+        Hmac(sha256, kSigning).convert(utf8.encode(stringToSign)).toString();
+
+    final String authorization =
+        '$algorithm Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
+
+    try {
+      final response = await http.delete(
+        url,
+        headers: {
+          'Authorization': authorization,
+          'x-amz-date': amzDate,
+          'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+        },
+      );
+
+      if (response.statusCode == 204) {
+        print("✔ Image deleted from S3");
+        return true;
+      } else {
+        print("❌ Failed to delete image: ${response.statusCode} → ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("❌ Error deleting S3 image: $e");
+      return false;
+    }
+  }
+
   Future<String?> uploadImage(Uint8List fileBytes, String fileName) async {
     if (accessKey.isEmpty || secretKey.isEmpty || region.isEmpty || bucket.isEmpty) {
       print('AWS credentials are missing');

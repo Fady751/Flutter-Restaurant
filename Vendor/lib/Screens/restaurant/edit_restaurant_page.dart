@@ -6,37 +6,60 @@ import 'package:geolocator/geolocator.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../services/s3_service.dart';
 
-class AddRestaurantPage extends StatefulWidget {
-  const AddRestaurantPage({super.key});
+class EditRestaurantPage extends StatefulWidget {
+  final String id;
+  final Map<String, dynamic> data;
+
+  const EditRestaurantPage({super.key, required this.id, required this.data});
 
   @override
-  _AddRestaurantPageState createState() => _AddRestaurantPageState();
+  _EditRestaurantPageState createState() => _EditRestaurantPageState();
 }
 
-class _AddRestaurantPageState extends State<AddRestaurantPage> {
-  final TextEditingController nameController = TextEditingController();
-  final TextEditingController descController = TextEditingController();
-  final List<String> timeSlots = ["10:00", "10:30", "11:00", "11:30", "12:00"];
+class _EditRestaurantPageState extends State<EditRestaurantPage> {
+  late TextEditingController nameController;
+  late TextEditingController descController;
 
   Uint8List? selectedImageBytes;
+  String? imageUrl;
+
   String? selectedCategory;
   List<String> categories = [];
 
   int tablesCount = 1;
-  List<int> tableSeats = [1];
+  List<int> tableSeats = [];
 
   double? lat;
   double? lng;
 
+  List<String> timeSlots = [];
+
   @override
   void initState() {
     super.initState();
+
+    nameController = TextEditingController(text: widget.data["name"]);
+    descController = TextEditingController(text: widget.data["description"]);
+
+    selectedCategory = widget.data["categories"][0];
+    imageUrl = widget.data["photoUrl"];
+
+    final tables = widget.data["tables"];
+    tablesCount = tables.length;
+    tableSeats = List<int>.from(tables.map((e) => e["seats"]));
+
+    lat = widget.data["location"]["lat"];
+    lng = widget.data["location"]["lng"];
+
+    timeSlots = List<String>.from(widget.data["timeSlots"]);
+
     loadCategories();
-    getCurrentLocation();
   }
 
   Future<void> loadCategories() async {
-    final result = await FirebaseFirestore.instance.collection("categories").get();
+    final result =
+        await FirebaseFirestore.instance.collection("categories").get();
+
     setState(() {
       categories = result.docs.isEmpty
           ? ["Uncategorized", "Fast Food", "Fine Dining", "Cafe"]
@@ -44,30 +67,9 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
     });
   }
 
-  Future<void> getCurrentLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      await Geolocator.openLocationSettings();
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-    if (permission == LocationPermission.deniedForever) return;
-
-    var pos = await Geolocator.getCurrentPosition();
-    setState(() {
-      lat = pos.latitude;
-      lng = pos.longitude;
-    });
-  }
-
   Future<void> pickImage(ImageSource source) async {
     if (kIsWeb) {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         withData: true,
       );
@@ -77,13 +79,11 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
           selectedImageBytes = result.files.first.bytes;
         });
       }
-
     } else {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: source);
-
-      if (image != null) {
-        final bytes = await image.readAsBytes();
+      final picker = ImagePicker();
+      final XFile? file = await picker.pickImage(source: source);
+      if (file != null) {
+        final bytes = await file.readAsBytes();
         setState(() {
           selectedImageBytes = bytes;
         });
@@ -93,80 +93,58 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
 
   Future<String?> uploadImage(Uint8List bytes) async {
     try {
-      final fileName = "restaurant_${DateTime.now().millisecondsSinceEpoch}.jpg";
-      final s3Service = S3Service();
-      return await s3Service.uploadImage(bytes, fileName);
+      final fileName =
+          "restaurant_${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final s3 = S3Service();
+      return await s3.uploadImage(bytes, fileName);
     } catch (e) {
-      print("Image upload error: $e");
+      print("Error uploading: $e");
       return null;
     }
   }
 
-  Future<void> saveRestaurant() async {
+  Future<void> saveChanges() async {
+    String newPhotoUrl = imageUrl!;
 
-    print("Saving restaurant...");
-    if (nameController.text.isEmpty || selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter name and select category")),
-      );
-      return;
+    if (selectedImageBytes != null) {
+      final uploaded = await uploadImage(selectedImageBytes!);
+      if (uploaded != null) newPhotoUrl = uploaded;
     }
-   print("Saving restaurant2...");
-    if (selectedImageBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select an image")),
-      );
-      return;
-    }
-    print("Saving restaurant3...");
-    final imageUrl = await uploadImage(selectedImageBytes!);
-    if (imageUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to upload image")),
-      );
-      return;
-    }
-    print("Saving restaurant4...");
-    final restaurantData = {
+
+    final data = {
       "name": nameController.text,
       "description": descController.text,
       "categories": [selectedCategory],
       "tables": List.generate(
         tablesCount,
-        (idx) => {"tableId": idx + 1, "seats": tableSeats[idx]},
+        (i) => {"tableId": i + 1, "seats": tableSeats[i]},
       ),
       "timeSlots": timeSlots,
       "location": {"lat": lat, "lng": lng},
-      "photoUrl": imageUrl,
+      "photoUrl": newPhotoUrl,
     };
-    print("Saving restaurant5...");
-    await FirebaseFirestore.instance.collection("restaurants").add(restaurantData);
-    print("Saving restaurant6...");
+
+    await FirebaseFirestore.instance
+        .collection("restaurants")
+        .doc(widget.id)
+        .update(data);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Restaurant Added Successfully")),
+      const SnackBar(content: Text("Restaurant Updated Successfully")),
     );
 
-    nameController.clear();
-    descController.clear();
-    setState(() {
-      selectedImageBytes = null;
-      selectedCategory = null;
-      tablesCount = 1;
-      tableSeats = [1];
-    });
-
-    Navigator.pop(context);  
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Add Restaurant")),
+      appBar: AppBar(title: const Text("Edit Restaurant")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            // IMAGE PICKER
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -188,17 +166,19 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
               height: 150,
               width: double.infinity,
               color: Colors.grey[300],
-              child: selectedImageBytes == null
-                  ? const Icon(Icons.image, size: 50)
-                  : Image.memory(selectedImageBytes!, fit: BoxFit.cover),
+              child: selectedImageBytes != null
+                  ? Image.memory(selectedImageBytes!, fit: BoxFit.cover)
+                  : Image.network(imageUrl!, fit: BoxFit.cover),
             ),
 
             const SizedBox(height: 10),
+
             TextField(
               controller: nameController,
               decoration: const InputDecoration(labelText: "Name"),
             ),
             const SizedBox(height: 10),
+
             TextField(
               controller: descController,
               decoration: const InputDecoration(labelText: "Description"),
@@ -216,6 +196,7 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
 
             const SizedBox(height: 10),
 
+            // TABLES
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -255,8 +236,8 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
                       value: tableSeats[index],
                       items: List.generate(
                         6,
-                        (i) => DropdownMenuItem(
-                            value: i + 1, child: Text("${i + 1} seats")),
+                        (i) =>
+                            DropdownMenuItem(value: i + 1, child: Text("${i + 1} seats")),
                       ),
                       onChanged: (v) {
                         setState(() => tableSeats[index] = v!);
@@ -268,32 +249,24 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
             ),
 
             const SizedBox(height: 20),
+
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: timeSlots.map((e) => Text("• $e")).toList(),
             ),
+
             const SizedBox(height: 20),
 
             ElevatedButton(
-              onPressed: () async {
-                await saveRestaurant(); 
-                ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Restaurant Added Successfully")),
-              );
-              },
-              child: const Text("Save Restaurant"),
+              onPressed: saveChanges,
+              child: const Text("Save Changes"),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
+
             ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              // style: ElevatedButton.styleFrom(
-              //   padding: const EdgeInsets.symmetric(vertical: 16),
-              //   textStyle: const TextStyle(fontSize: 18),
-              // ),
-              child: const Text("cancel!"),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
             )
           ],
         ),
