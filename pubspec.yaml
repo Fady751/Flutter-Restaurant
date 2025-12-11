@@ -43,6 +43,7 @@ dependencies:
   geocoding: ^4.0.0
   google_maps_flutter: ^2.14.0
   firebase_storage: ^13.0.4
+  file_picker: ^10.3.7
 
 dev_dependencies:
   flutter_test:

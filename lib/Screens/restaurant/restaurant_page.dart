@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:file_picker/file_picker.dart';
 
 class AddRestaurantPage extends StatefulWidget {
   const AddRestaurantPage({super.key});
@@ -17,7 +20,7 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
   final TextEditingController descController = TextEditingController();
   final List<String> timeSlots = ["10:00", "10:30", "11:00", "11:30", "12:00"];
 
-  File? selectedImage;
+  Uint8List? selectedImageBytes;
   String? selectedCategory;
   List<String> categories = [];
 
@@ -64,20 +67,45 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
     });
   }
 
+  // Pick image from web or mobile
   Future<void> pickImage(ImageSource source) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? img = await picker.pickImage(source: source);
-    if (img != null) {
-      setState(() => selectedImage = File(img.path));
+    if (kIsWeb) {
+      // =========== WEB ============
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+
+      if (result != null) {
+        setState(() {
+          selectedImageBytes = result.files.first.bytes;
+        });
+      }
+
+    } else {
+      // =========== MOBILE ============
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: source);
+
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          selectedImageBytes = bytes;
+        });
+      }
     }
   }
 
-  // Upload image to Firebase Storage
-  Future<String?> uploadImage(File image) async {
+  // Upload bytes to Firebase Storage
+  Future<String?> uploadImage(Uint8List bytes) async {
     try {
       final fileName = DateTime.now().millisecondsSinceEpoch.toString();
-      final ref = FirebaseStorage.instance.ref().child('restaurant_images/$fileName');
-      await ref.putFile(image);
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('restaurant_images/$fileName');
+
+      await ref.putData(bytes, SettableMetadata(contentType: "image/png"));
+
       return await ref.getDownloadURL();
     } catch (e) {
       print("Image upload error: $e");
@@ -86,28 +114,30 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
   }
 
   Future<void> saveRestaurant() async {
+
+    print("Saving restaurant...");
     if (nameController.text.isEmpty || selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please enter name and select category")),
       );
       return;
     }
-
-    if (selectedImage == null) {
+   print("Saving restaurant2...");
+    if (selectedImageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select an image")),
       );
       return;
     }
-
-    final imageUrl = await uploadImage(selectedImage!);
+    print("Saving restaurant3...");
+    final imageUrl = await uploadImage(selectedImageBytes!);
     if (imageUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Failed to upload image")),
       );
       return;
     }
-
+    print("Saving restaurant4...");
     final restaurantData = {
       "name": nameController.text,
       "description": descController.text,
@@ -120,22 +150,24 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
       "location": {"lat": lat, "lng": lng},
       "photoUrl": imageUrl,
     };
-
+    print("Saving restaurant5...");
     await FirebaseFirestore.instance.collection("restaurants").add(restaurantData);
+    print("Saving restaurant6...");
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Restaurant Added Successfully")),
     );
 
-    // Clear form
     nameController.clear();
     descController.clear();
     setState(() {
-      selectedImage = null;
+      selectedImageBytes = null;
       selectedCategory = null;
       tablesCount = 1;
       tableSeats = [1];
     });
+
+    Navigator.pop(context);  
   }
 
   @override
@@ -162,16 +194,17 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
               ],
             ),
             const SizedBox(height: 10),
+
             Container(
               height: 150,
               width: double.infinity,
               color: Colors.grey[300],
-              child: selectedImage == null
+              child: selectedImageBytes == null
                   ? const Icon(Icons.image, size: 50)
-                  : Image.file(selectedImage!, fit: BoxFit.cover),
+                  : Image.memory(selectedImageBytes!, fit: BoxFit.cover),
             ),
-            const SizedBox(height: 10),
 
+            const SizedBox(height: 10),
             TextField(
               controller: nameController,
               decoration: const InputDecoration(labelText: "Name"),
@@ -191,6 +224,7 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
               onChanged: (v) => setState(() => selectedCategory = v),
               decoration: const InputDecoration(labelText: "Category"),
             ),
+
             const SizedBox(height: 10),
 
             Row(
@@ -252,9 +286,26 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
             const SizedBox(height: 20),
 
             ElevatedButton(
-              onPressed: saveRestaurant,
+              onPressed: () async {
+                await saveRestaurant(); 
+                ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Restaurant Added Successfully")),
+              );
+              },
               child: const Text("Save Restaurant"),
             ),
+
+            const SizedBox(height: 30),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              // style: ElevatedButton.styleFrom(
+              //   padding: const EdgeInsets.symmetric(vertical: 16),
+              //   textStyle: const TextStyle(fontSize: 18),
+              // ),
+              child: const Text("cancel!"),
+            )
           ],
         ),
       ),
