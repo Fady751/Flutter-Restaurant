@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../services/s3_service.dart';
 
 class AddRestaurantPage extends StatefulWidget {
   const AddRestaurantPage({super.key});
@@ -96,17 +97,12 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
     }
   }
 
-  // Upload bytes to Firebase Storage
+  // Upload bytes to AWS S3
   Future<String?> uploadImage(Uint8List bytes) async {
     try {
-      final fileName = DateTime.now().millisecondsSinceEpoch.toString();
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('restaurant_images/$fileName');
-
-      await ref.putData(bytes, SettableMetadata(contentType: "image/png"));
-
-      return await ref.getDownloadURL();
+      final fileName = "restaurant_${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final s3Service = S3Service();
+      return await s3Service.uploadImage(bytes, fileName);
     } catch (e) {
       print("Image upload error: $e");
       return null;
