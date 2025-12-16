@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
@@ -18,42 +19,56 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
 
   Future<void> signIn(BuildContext context) async {
-    final url = Uri.parse("${APP_URL}:signInWithPassword?key=${APIKEY}");
+  try {
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
 
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "email": emailController.text.trim(),
-        "password": passwordController.text.trim(),
-        "returnSecureToken": true,
-      }),
-    );
-
-    // print("STATUS CODE: ${response.statusCode}");
-
-    if (response.statusCode != 200) {
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      String errorMessage = data['error']['message'];
-
-      if (errorMessage == "INVALID_LOGIN_CREDENTIALS") {
-        errorMessage =
-            "Invalid email or password. Please try again or sign up.";
-      } else if (errorMessage == "EMAIL_NOT_FOUND") {
-        errorMessage = "Email not found. Please check your email or sign up.";
-      }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("$errorMessage")));
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Email and password are required")),
+      );
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => HomePage()),
+
+    // ✅ REAL Firebase login (creates session)
+    await FirebaseAuth.instance.signInWithEmailAndPassword(
+      email: email,
+      password: password,
     );
-    // print("BODY: ${response.body}");
+
+    // Optional: debug check
+    final user = FirebaseAuth.instance.currentUser;
+    print("LOGGED IN USER UID: ${user?.uid}");
+
+    if (user == null) {
+      throw Exception("Login failed. Please try again.");
+    }
+
+    // Navigate after successful login
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const HomePage()),
+    );
+  } on FirebaseAuthException catch (e) {
+    String message = "Login failed";
+
+    if (e.code == 'user-not-found') {
+      message = "Email not found. Please sign up.";
+    } else if (e.code == 'wrong-password') {
+      message = "Invalid password. Please try again.";
+    } else if (e.code == 'invalid-email') {
+      message = "Invalid email format.";
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString())),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {

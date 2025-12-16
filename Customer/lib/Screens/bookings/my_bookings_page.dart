@@ -28,7 +28,6 @@ class _MyBookingsPageState extends State<MyBookingsPage> {
       setState(() => _isLoading = false);
       return;
     }
-
     try {
       final restaurantsSnapshot = await _firestore.collection("restaurants").get();
       

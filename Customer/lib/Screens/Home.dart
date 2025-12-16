@@ -810,6 +810,22 @@ class _BookingPageState extends State<BookingPage> {
         tables[tableIndex] = targetTable;
 
         transaction.update(docRef, {'tables': tables});
+
+       await FirebaseFirestore.instance
+        .collection("vendor_notifications")
+        .add({
+          "title": "New Booking",
+          "message": "${user.displayName ?? 'A customer'} booked a table",
+          "createdAt": Timestamp.now(),
+          "type": "booking",
+          "isRead": false,
+          "restaurantName": widget.restaurantName,
+          "tableId": _selectedTable!['tableId'],
+          "timeSlot": _selectedTimeSlot,
+          "customerName": user.displayName ?? "",
+          "guests": _selectedSeats
+      });
+
       });
 
       if (mounted) {

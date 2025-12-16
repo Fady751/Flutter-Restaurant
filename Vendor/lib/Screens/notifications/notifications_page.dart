@@ -22,11 +22,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
             icon: const Icon(Icons.done_all),
             onPressed: () async {
               await _notificationService.markAllAsRead();
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("All notifications marked as read")),
               );
             },
-            tooltip: "Mark all as read",
           ),
         ],
       ),
@@ -135,10 +135,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return '';
-    
+
     DateTime date;
     if (timestamp is Timestamp) {
       date = timestamp.toDate();
+    } else if (timestamp is DateTime) {
+      date = timestamp;
     } else {
       return '';
     }
@@ -146,17 +148,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final now = DateTime.now();
     final difference = now.difference(date);
 
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inHours < 1) {
-      return '${difference.inMinutes} min ago';
-    } else if (difference.inDays < 1) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
+    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inHours < 1) return '${difference.inMinutes} min ago';
+    if (difference.inDays < 1) return '${difference.inHours} hours ago';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
+    return '${date.day}/${date.month}/${date.year}';
   }
 
   void _showNotificationDetails(Map<String, dynamic> data) {
