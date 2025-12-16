@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'Auth/login.dart';
+import 'bookings/my_bookings_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -77,6 +78,16 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_outlined, color: Colors.deepOrange),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyBookingsPage()),
+              );
+            },
+            tooltip: "My Bookings",
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.black54),
             onPressed: _logout,
