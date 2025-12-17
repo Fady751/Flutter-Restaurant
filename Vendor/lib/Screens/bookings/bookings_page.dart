@@ -12,6 +12,25 @@ class _BookingsPageState extends State<BookingsPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? selectedRestaurantId;
   String? selectedRestaurantName;
+  DateTime _selectedDate = DateTime.now();
+
+  String get _selectedDateStr {
+    return "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}";
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +86,80 @@ class _BookingsPageState extends State<BookingsPage> {
             },
           ),
 
+          // Date Picker
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: InkWell(
+              onTap: _pickDate,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today, color: Colors.deepOrange),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Selected Date",
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _selectedDateStr,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: () {
+                            setState(() {
+                              _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+                            });
+                          },
+                          tooltip: "Previous day",
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.today),
+                          onPressed: () {
+                            setState(() {
+                              _selectedDate = DateTime.now();
+                            });
+                          },
+                          tooltip: "Today",
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: () {
+                            setState(() {
+                              _selectedDate = _selectedDate.add(const Duration(days: 1));
+                            });
+                          },
+                          tooltip: "Next day",
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+
           // Bookings Display
           Expanded(
             child: selectedRestaurantId == null
@@ -105,7 +198,7 @@ class _BookingsPageState extends State<BookingsPage> {
                         return const Center(child: Text("No tables configured"));
                       }
 
-                      return _buildBookingsGrid(tables, timeSlots);
+                      return _buildBookingsGrid(tables, timeSlots, _selectedDateStr);
                     },
                   ),
           ),
@@ -114,7 +207,7 @@ class _BookingsPageState extends State<BookingsPage> {
     );
   }
 
-  Widget _buildBookingsGrid(List<dynamic> tables, List<dynamic> timeSlots) {
+  Widget _buildBookingsGrid(List<dynamic> tables, List<dynamic> timeSlots, String dateStr) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -124,7 +217,12 @@ class _BookingsPageState extends State<BookingsPage> {
             selectedRestaurantName ?? "Restaurant",
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          Text(
+            "Bookings for $dateStr",
+            style: const TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
           Text(
             "${tables.length} Tables • ${timeSlots.length} Time Slots",
             style: TextStyle(color: Colors.grey[600]),
@@ -184,9 +282,9 @@ class _BookingsPageState extends State<BookingsPage> {
                       children: timeSlots.map((slot) {
                         final isBooked = reservations.any((r) {
                           if (r is Map) {
-                            return r['timeSlot'] == slot;
+                            return r['timeSlot'] == slot && r['date'] == dateStr;
                           }
-                          return r == slot;
+                          return false;
                         });
 
                         // Get booking details if booked
@@ -195,9 +293,9 @@ class _BookingsPageState extends State<BookingsPage> {
                           final booking = reservations.firstWhere(
                             (r) {
                               if (r is Map) {
-                                return r['timeSlot'] == slot;
+                                return r['timeSlot'] == slot && r['date'] == dateStr;
                               }
-                              return r == slot;
+                              return false;
                             },
                             orElse: () => null,
                           );
@@ -248,13 +346,24 @@ class _BookingsPageState extends State<BookingsPage> {
                         );
                       }).toList(),
                     ),
-                    if (reservations.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        "${reservations.length} booking(s)",
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      ),
-                    ],
+                    Builder(
+                      builder: (context) {
+                        final dateBookings = reservations.where((r) {
+                          if (r is Map) return r['date'] == dateStr;
+                          return false;
+                        }).length;
+                        if (dateBookings > 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              "$dateBookings booking(s) on $dateStr",
+                              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   ],
                 ),
               ),
