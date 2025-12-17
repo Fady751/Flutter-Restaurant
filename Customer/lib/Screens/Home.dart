@@ -61,6 +61,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  String _getLocationText(Map<String, dynamic> data) {
+    final location = data['location'] as Map<String, dynamic>?;
+    if (location != null) {
+      final address = location['address'] as String?;
+      if (address != null && address.isNotEmpty) {
+        return address;
+      }
+      // If no address but has coordinates
+      final lat = location['lat'];
+      final lng = location['lng'];
+      if (lat != null && lng != null) {
+        return "Lat: ${(lat as num).toStringAsFixed(4)}, Lng: ${(lng as num).toStringAsFixed(4)}";
+      }
+    }
+    return "Location not set";
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -360,15 +377,11 @@ class _HomePageState extends State<HomePage> {
                                       const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
-                                          "1.2 km away", // Placeholder
+                                          _getLocationText(data),
                                           style: TextStyle(color: Colors.grey[500]),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ),
-                                      Text(
-                                        "20-30 min",
-                                        style: TextStyle(
-                                            color: Colors.grey[500],
-                                            fontWeight: FontWeight.w500),
                                       ),
                                     ],
                                   ),
@@ -500,7 +513,61 @@ class RestaurantDetailsPage extends StatelessWidget {
                             color: Colors.grey[600],
                             height: 1.6),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
+
+                      // Location Section
+                      if (data['location'] != null) ...[
+                        const Text("Location",
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.location_on, color: Colors.blue),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      (data['location'] as Map<String, dynamic>)['address'] ?? 'Address not available',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    if ((data['location'] as Map<String, dynamic>)['lat'] != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        "Lat: ${((data['location'] as Map<String, dynamic>)['lat'] as num).toStringAsFixed(5)}, Lng: ${((data['location'] as Map<String, dynamic>)['lng'] as num).toStringAsFixed(5)}",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[500],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
 
                       // Book a Table Section
                       Container(
