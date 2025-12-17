@@ -3,9 +3,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../services/s3_service.dart';
-import 'simple_location_picker.dart';
 
 class AddRestaurantPage extends StatefulWidget {
   const AddRestaurantPage({super.key});
@@ -31,6 +31,8 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
   double? lat;
   double? lng;
   String? locationAddress;
+  bool _isGettingLocation = false;
+  String? _locationError;
 
   bool _isSaving = false;
 
@@ -38,7 +40,7 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
   void initState() {
     super.initState();
     loadCategories();
-    getCurrentLocation();
+    _getAutoLocation();
   }
 
   Future<void> loadCategories() async {
@@ -50,60 +52,97 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
     });
   }
 
-  Future<void> getCurrentLocation() async {
+  Future<void> _getAutoLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+      _locationError = null;
+    });
+
     try {
+      // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        // Don't block - just skip getting location
+        setState(() {
+          _locationError = "Location services are disabled. Please enable them.";
+          _isGettingLocation = false;
+        });
         return;
       }
 
+      // Check and request permission
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _locationError = "Location permission denied. Please grant permission.";
+            _isGettingLocation = false;
+          });
+          return;
+        }
       }
-      if (permission == LocationPermission.deniedForever) return;
+      
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _locationError = "Location permission permanently denied. Please enable in settings.";
+          _isGettingLocation = false;
+        });
+        return;
+      }
 
-      // Add timeout to prevent freezing
-      var pos = await Geolocator.getCurrentPosition(
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 10),
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       ).timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 20),
         onTimeout: () {
-          throw Exception('Location timeout');
+          throw Exception('Location request timed out');
         },
       );
-      
+
+      // Get address from coordinates using geocoding
+      String address = "Location obtained";
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        ).timeout(const Duration(seconds: 10));
+
+        if (placemarks.isNotEmpty) {
+          Placemark place = placemarks.first;
+          address = [
+            place.street,
+            place.subLocality,
+            place.locality,
+            place.administrativeArea,
+            place.country,
+          ].where((s) => s != null && s.isNotEmpty).join(', ');
+        }
+      } catch (e) {
+        print("Geocoding error: $e");
+        address = "Lat: ${position.latitude.toStringAsFixed(5)}, Lng: ${position.longitude.toStringAsFixed(5)}";
+      }
+
       if (mounted) {
         setState(() {
-          lat = pos.latitude;
-          lng = pos.longitude;
-          locationAddress = "Current Location";
+          lat = position.latitude;
+          lng = position.longitude;
+          locationAddress = address;
+          _isGettingLocation = false;
+          _locationError = null;
         });
       }
     } catch (e) {
       print("Error getting location: $e");
-    }
-  }
-
-  Future<void> openMapPicker() async {
-    final result = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SimpleLocationPicker(initialLat: lat, initialLng: lng),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        lat = result['lat'];
-        lng = result['lng'];
-        locationAddress = result['address'];
-      });
+      if (mounted) {
+        setState(() {
+          _locationError = "Failed to get location: ${e.toString()}";
+          _isGettingLocation = false;
+        });
+      }
     }
   }
 
@@ -299,18 +338,113 @@ class _AddRestaurantPageState extends State<AddRestaurantPage> {
 
             const SizedBox(height: 20),
 
-            // LOCATION SECTION
+            // LOCATION SECTION - Automatic GPS Location
             const Text("Sales Point Location", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text(
+              "Location is automatically obtained from your device GPS",
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
             const SizedBox(height: 8),
             Card(
-              child: ListTile(
-                leading: const Icon(Icons.location_on, color: Colors.red),
-                title: Text(locationAddress ?? "Tap to select location"),
-                subtitle: lat != null && lng != null
-                    ? Text("Lat: ${lat!.toStringAsFixed(4)}, Lng: ${lng!.toStringAsFixed(4)}")
-                    : const Text("No location selected"),
-                trailing: const Icon(Icons.map),
-                onTap: openMapPicker,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    if (_isGettingLocation)
+                      const Row(
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 12),
+                          Text("Getting your location..."),
+                        ],
+                      )
+                    else if (_locationError != null)
+                      Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.red),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _locationError!,
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            onPressed: _getAutoLocation,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text("Try Again"),
+                          ),
+                        ],
+                      )
+                    else if (lat != null && lng != null)
+                      Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.check_circle, color: Colors.green),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      "Location Obtained",
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      locationAddress ?? "Address not available",
+                                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "Lat: ${lat!.toStringAsFixed(6)}, Lng: ${lng!.toStringAsFixed(6)}",
+                                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: _getAutoLocation,
+                                icon: const Icon(Icons.refresh),
+                                tooltip: "Refresh Location",
+                              ),
+                            ],
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          const Icon(Icons.location_off, color: Colors.grey),
+                          const SizedBox(width: 12),
+                          const Expanded(child: Text("Location not set")),
+                          ElevatedButton.icon(
+                            onPressed: _getAutoLocation,
+                            icon: const Icon(Icons.my_location),
+                            label: const Text("Get Location"),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ),
 
