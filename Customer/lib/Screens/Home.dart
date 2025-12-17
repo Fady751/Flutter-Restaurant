@@ -1040,6 +1040,40 @@ class _BookingPageState extends State<BookingPage> {
                 if (_selectedDate != null) ...[
                   _buildSectionTitle("3. Select Table", Icons.table_restaurant),
                   const SizedBox(height: 16),
+                  
+                  // Check if selected table is now fully booked
+                  Builder(builder: (context) {
+                    if (_selectedTable != null) {
+                      final currentTable = currentTables.firstWhere(
+                        (t) => t['tableId'] == _selectedTable!['tableId'],
+                        orElse: () => null,
+                      );
+                      if (currentTable != null) {
+                        final availableSlots = _getAvailableTimeSlots(
+                          currentTable as Map<String, dynamic>, 
+                          dateStr!
+                        );
+                        if (availableSlots.isEmpty) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              setState(() {
+                                _selectedTable = null;
+                                _selectedTimeSlot = null;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("This table is now fully booked. Please select another."),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          });
+                        }
+                      }
+                    }
+                    return const SizedBox.shrink();
+                  }),
+                  
                   if (availableTables.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(20),
@@ -1173,7 +1207,28 @@ class _BookingPageState extends State<BookingPage> {
                   _buildSectionTitle("4. Select Time Slot", Icons.access_time),
                   const SizedBox(height: 16),
                   Builder(builder: (context) {
-                    final availableSlots = _getAvailableTimeSlots(_selectedTable!, dateStr);
+                    // Get the current table data from stream (real-time)
+                    final currentTable = currentTables.firstWhere(
+                      (t) => t['tableId'] == _selectedTable!['tableId'],
+                      orElse: () => _selectedTable!,
+                    ) as Map<String, dynamic>;
+                    
+                    final availableSlots = _getAvailableTimeSlots(currentTable, dateStr);
+                    
+                    // If the selected time slot is no longer available, clear it
+                    if (_selectedTimeSlot != null && !availableSlots.contains(_selectedTimeSlot)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() => _selectedTimeSlot = null);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("This time slot was just booked. Please select another."),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                      });
+                    }
                     
                     if (availableSlots.isEmpty) {
                       return Container(
